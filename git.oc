@@ -1,0 +1,59 @@
+import std::buffer::Buffer
+import std::fs
+import std::zlib
+import std::hash::sha1::SHA1Hash
+
+enum Object {
+    Blob(buf:Buffer)
+}
+
+def get_object_filename(hash: str): str {
+    return f".git/objects/{hash[0]}{hash[1]}/{hash + 2}"
+}
+
+def get_object(hash: str): Buffer {
+    let path = get_object_filename(hash)
+    let file = fs::read_file(path)
+    path.free()
+
+    let contents = zlib::decompress(file)
+    file.free()
+    let sv = contents.sv()
+    let header = sv.chop_word()
+    assert header == "blob"
+    let length = sv.chop_i32()
+    sv.chop_left()
+    let data = Buffer::from_sv(sv)
+    contents.free()
+
+    return data
+}
+
+def hash_object(object: Object, write: bool): str {
+    match object {
+        Blob(buf) => {
+            let hash = SHA1Hash::from(buf)
+            let hash_str = hash.stringify()
+            if write {
+                fs::create_directory(f".git/objects/{hash_str[0]}{hash_str[1]}", exists_ok:true)
+                let compressed_file = zlib::compress(buf)
+                let path = get_object_filename(hash_str)
+                fs::write_file(path, compressed_file)
+                println(f"object saved to: {path}")
+                path.free()
+                compressed_file.free()
+            }
+            return hash_str
+        }
+    }
+    assert false
+}
+
+def create_object(path: str): Object {
+    let object = Buffer::make()
+    let file = fs::read_file(path)
+    object <<= f"blob {file.size}"
+    object += '\0'
+    object <<= &file
+    return Blob(object)
+}
