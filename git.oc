@@ -2,58 +2,164 @@ import std::buffer::Buffer
 import std::fs
 import std::zlib
 import std::hash::sha1::SHA1Hash
+import std::sort::sort_by
+import std::traits::compare
+
+
+struct TreeElement {
+    mode: str
+    filename: str
+    hash: str
+}
+
+def TreeElement::free(this) {
+    this.filename.free()
+    this.mode.free()
+    this.hash.free()
+}
 
 enum Object {
     Blob(buf:Buffer)
+    Tree(li:$[TreeElement])
+}
+
+def Object::free(this) {
+    match this {
+        Blob(buf) => buf.free()
+        Tree(li) => {
+            for element in li.iter() {
+                element.free()
+            }
+            li.free()
+        }
+    }
 }
 
 def get_object_filename(hash: str): str {
     return f".git/objects/{hash[0]}{hash[1]}/{hash + 2}"
 }
 
-def get_object(hash: str): Buffer {
-    let path = get_object_filename(hash)
+def decompress_object(path: str): Buffer {
     let file = fs::read_file(path)
-    path.free()
-
     let contents = zlib::decompress(file)
     file.free()
+    return contents
+}
+
+def get_object(hash: str): Object {
+    let path = get_object_filename(hash)
+    let contents = decompress_object(path)
+    defer contents.free()
+    path.free()
     let sv = contents.sv()
     let header = sv.chop_word()
-    assert header == "blob"
     let length = sv.chop_i32()
     sv.chop_left()
-    let data = Buffer::from_sv(sv)
-    contents.free()
 
-    return data
+    match(header) {
+        "blob" => {
+            let data = Buffer::from_sv(sv)
+            return Blob(data)
+        }
+        "tree" => {
+            let li: $[TreeElement] = $[]
+            while sv.len > 0 {
+                let mode = sv.chop_word().copy_data_to_cstr()
+                let filename = sv.chop_by_delim('\0').copy_data_to_cstr()
+                
+                let hash_bytes = sv.chop_left(20)
+                let sha1: SHA1Hash
+                std::libc::memcpy(sha1.data, hash_bytes.data, 20)
+                let hash_str = sha1.stringify()
+
+                let tree_entry = TreeElement(mode, filename, hash_str)
+                li += tree_entry
+            }
+            return Tree(li)
+        }
+        else => std::panic(f"Not yet implemented for {header}")
+    }
+
+
 }
 
 def hash_object(object: Object, write: bool): str {
+    let out = Buffer::make()
     match object {
         Blob(buf) => {
-            let hash = SHA1Hash::from(buf)
-            let hash_str = hash.stringify()
-            if write {
-                fs::create_directory(f".git/objects/{hash_str[0]}{hash_str[1]}", exists_ok:true)
-                let compressed_file = zlib::compress(buf)
-                let path = get_object_filename(hash_str)
-                fs::write_file(path, compressed_file)
-                println(f"object saved to: {path}")
-                path.free()
-                compressed_file.free()
+            out <<= f"blob {buf.size}"
+            out += '\0'
+            out += &buf
+        }
+
+        Tree(li) => {
+            let data = Buffer::make()
+            for entry in li.iter() {
+                data <<= f"{entry.mode} {entry.filename}"
+                data += '\0'
+                let sha1 = SHA1Hash::parse_string_hash(entry.hash)
+                data.write_bytes(sha1.data, 20)
             }
-            return hash_str
+            out <<= f"tree {data.size}"
+            out += '\0'
+            out <<= &data
         }
     }
-    assert false
+
+    let hash = SHA1Hash::from(out)
+    let hash_str = hash.stringify()
+    let path = get_object_filename(hash_str)
+    if write {
+        fs::create_directory(f".git/objects/{hash_str[0]}{hash_str[1]}", exists_ok:true)
+        let compressed_file = zlib::compress(out)
+
+        // write_file would not overwrite an existing file
+        if not fs::file_exists(path) fs::write_file(path, compressed_file)
+
+        path.free()
+        compressed_file.free()
+    }
+    return hash_str
 }
 
-def create_object(path: str): Object {
-    let object = Buffer::make()
+def create_blob(path: str): Object {
     let file = fs::read_file(path)
-    object <<= f"blob {file.size}"
-    object += '\0'
-    object <<= &file
-    return Blob(object)
+    return Blob(file)
+}
+
+def create_tree(path: str): Object {
+    let tree_li: $[TreeElement] = $[]
+    for entry in fs::iterate_directory(path) {
+        if entry.name == ".git" continue
+        match(entry.type) {
+            File => {
+                let mode = "100644".copy()
+                let name = entry.name.copy()
+                let blob = create_blob(f"{path}/{entry.name}")
+                let hash = hash_object(blob, write:true)
+                blob.free()
+                tree_li += TreeElement(mode, name, hash)
+            }
+            Directory => {
+                let mode = "40000".copy()
+                let name = entry.name.copy()
+                let tree = create_tree(f"{path}/{entry.name}")
+                let hash = hash_object(tree, write:true)
+                tree.free()
+                tree_li += TreeElement(mode, name, hash)
+            }
+            else => {}
+            // SymbolicLink => {
+            //     object <<= f"120000 "
+            // }
+        }
+    }
+    sort_by<TreeElement>(tree_li.data, tree_li.size, |a,b|{
+        if a.mode.eq(b.mode) {
+            return a.filename.compare(b.filename)
+        } else {
+            return -a.mode[0].compare(b.mode[0])
+        }
+    })
+    return Tree(tree_li)
 }
