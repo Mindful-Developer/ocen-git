@@ -1,7 +1,8 @@
 import std::fs
 import std::shift_args
 import std::libc::unistd::chdir
-import git::{this, get_object, create_blob, create_tree}
+import std::argparse::Parser
+import git::{this, get_object, create_blob, create_tree, create_commit}
 
 
 def main(argc: i32, argv: &str) {
@@ -13,7 +14,8 @@ def main(argc: i32, argv: &str) {
         "cat-file" => cat_file(argc, argv)
         "hash-object" => hash_object(argc, argv)
         "ls-tree" => ls_tree(argc, argv)
-        "write-tree" => write_tree(argc, argv)
+        "write-tree" => write_tree()
+        "commit-tree" => commit_tree(argc, argv)
         else => std::panic("Wrong subcommand, stupid!")
     }
 }
@@ -91,11 +93,27 @@ def ls_tree(argc: i32, argv: &str) {
     }
 }
 
-def write_tree(argc: i32, argv: &str) {
+def write_tree() {
     let tree = create_tree(".")
     let hash = git::hash_object(tree, write:true)
     println(f"{hash}")
 }
 
+def commit_tree(argc: i32, argv: &str) {
+    let parser = Parser::make("commit tree")
+    let tree_hash = parser.add_str("hash", help:"tree hash str")
+    let parent = parser.add_str("-p", help:"parent commit")
+    let message = parser.add_str("-m", help:"commit message", required:true)
+    parser.parse(argc, argv, consume_first:false)
+    let parents: $[str] = $[]
+    if parent.len() > 0 then parents += parent.copy()
+
+    let commit = create_commit(*tree_hash, parents, *message)
+    let hash = git::hash_object(commit, write:true)
+    println(f"{hash}")
+}
+
+
+// 'commit 269\x00tree 8f651880678ddd742c68b2b2f6cb075e246863f5\nparent 2d169057570c3cb67331d96e0f6f86487c2f0d17\nauthor Christopher Busse <mindful.d3v@gmail.com> 1754524615 -0400\ncommitter Christopher Busse <mindful.d3v@gmail.com> 1754524615 -0400\n\nallow -p on cat-file and add gitignore\n'
 
 // ocen main.oc && ./test.sh ./out <command>

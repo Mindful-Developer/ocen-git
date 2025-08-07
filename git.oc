@@ -4,6 +4,7 @@ import std::zlib
 import std::hash::sha1::SHA1Hash
 import std::sort::sort_by
 import std::traits::compare
+import std::time
 
 
 struct TreeElement {
@@ -12,20 +13,50 @@ struct TreeElement {
     hash: str
 }
 
+
+
+struct Commit {
+    tree_hash: str
+    parent_hashes: $[str]
+    author: str
+    author_timestamp: i64
+    author_timezone: str
+    committer: str
+    committer_timestamp: i64
+    committer_timezone: str
+    message: str
+}
+
+def Commit::free(&this) {
+    .tree_hash.free()
+    for parent in .parent_hashes.iter() {
+        parent.free()
+    }
+    .parent_hashes.free()
+    .author.free()
+    .author_timezone.free()
+    .committer.free()
+    .committer_timezone.free()
+    .message.free()
+    std::mem::free(this)
+}
+
 def TreeElement::free(this) {
-    this.filename.free()
-    this.mode.free()
-    this.hash.free()
+    .filename.free()
+    .mode.free()
+    .hash.free()
 }
 
 enum Object {
     Blob(buf:Buffer)
     Tree(li:$[TreeElement])
+    Commit(commit:&Commit)
 }
 
 def Object::free(this) {
     match this {
         Blob(buf) => buf.free()
+        Commit(commit) => commit.free()
         Tree(li) => {
             for element in li.iter() {
                 element.free()
@@ -91,7 +122,6 @@ def hash_object(object: Object, write: bool): str {
             out += '\0'
             out += &buf
         }
-
         Tree(li) => {
             let data = Buffer::make()
             for entry in li.iter() {
@@ -104,7 +134,22 @@ def hash_object(object: Object, write: bool): str {
             out += '\0'
             out <<= &data
         }
+        Commit(commit) => {
+            let data = Buffer::make()
+            data <<= f"tree {commit.tree_hash}\n"
+            for parent in commit.parent_hashes.iter() {
+                data <<= f"parent {parent}\n"
+            }
+            data <<= f"author {commit.author} {commit.author_timestamp} {commit.author_timezone}\n"
+            data <<= f"committer {commit.committer} {commit.committer_timestamp} {commit.committer_timezone}\n\n"
+            data += commit.message
+
+            out <<= f"commit {data.size}"
+            out += '\0'
+            out <<= &data
+        }
     }
+
 
     let hash = SHA1Hash::from(out)
     let hash_str = hash.stringify()
@@ -162,4 +207,29 @@ def create_tree(path: str): Object {
         }
     })
     return Tree(tree_li)
+}
+
+def create_commit(tree_hash: str, parent_hashes: $[str], message: str): Object {
+    // FIXME: Need to get the actual author and committer from the environment
+    let user = "Unknown User <unknown@example.com>"
+    let timezone = Buffer::make(capacity: 6)
+    defer timezone.free()
+    let t = time::time(null)
+    let timeinfo = time::localtime(&t)
+    timezone.size += time::strftime(timezone.data as str, 6, "%z", timeinfo)
+    let timestamp = t as i64
+
+    let commit = @new Commit(
+        tree_hash.copy(), 
+        parent_hashes, 
+        author:user.copy(), 
+        author_timestamp:timestamp, 
+        author_timezone:timezone.new_str(),
+        committer: user.copy(),
+        committer_timestamp:timestamp, 
+        committer_timezone:timezone.new_str(),
+        message.copy(),
+    )
+
+    return Commit(commit)
 }
