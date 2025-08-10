@@ -17,18 +17,11 @@ def main(argc: i32, argv: &str) {
         "write-tree" => write_tree()
         "commit-tree" => commit_tree(argc, argv)
         "update-index" => update_index(argc, argv)
-        "read-index" => read_index()
         else => std::panic("Wrong subcommand, stupid!")
     }
 }
 
-def read_index() {
-    let file = fs::read_file(".git/index")
-    let index = git::Index::from_buf(file)
-    
-    let buf = git::Index::to_buf(index)
-    fs::write_file(".git/index2", buf)
-}
+
 
 def initialize_repo(argc: i32, argv: &str) {
     if argc > 0 {
@@ -106,7 +99,9 @@ def ls_tree(argc: i32, argv: &str) {
 def write_tree() {
     let tree = create_tree(".")
     let hash = git::hash_object(tree, write:true)
+    tree.free()
     println(f"{hash}")
+    hash.free()
 }
 
 def commit_tree(argc: i32, argv: &str) {
@@ -119,12 +114,30 @@ def commit_tree(argc: i32, argv: &str) {
     if parent.len() > 0 then parents += parent.copy()
 
     let commit = create_commit(*tree_hash, parents, *message)
+    message.free()
+    tree_hash.free()
+    for p in parents.iter() {
+        p.free()
+    }
+    parents.free()
     let hash = git::hash_object(commit, write:true)
     println(f"{hash}")
+    hash.free()
 }
 
 def update_index(argc: i32, argv: &str) {
-
+    let parser = Parser::make("update index")
+    let path = parser.add_str("--add", help:"path to the file", required:true)
+    parser.parse(argc, argv, consume_first:false)
+    let file = fs::read_file(".git/index")
+    let index = git::Index::from_buf(file)
+    file.free()
+    index.add_entry(*path)
+    path.free()
+    let buf = index.to_buf()
+    index.free()
+    fs::write_file(".git/index", buf)
+    buf.free()
 }
 
 

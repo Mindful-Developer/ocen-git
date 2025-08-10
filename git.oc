@@ -185,6 +185,64 @@ def Index::to_buf(&this): Buffer {
     return buf
 }
 
+def Index::add_entry(&this, path: str) {
+    let stats = fs::file_info(path)
+    let blob = create_blob(path)
+    let hash_str = hash_object(blob, write:true)
+    blob.free()
+
+    let new_entry = @new Entry(
+        stats.ctime.tv_sec as u32,
+        stats.ctime.tv_nsec as u32,
+        stats.mtime.tv_sec as u32,
+        stats.mtime.tv_nsec as u32,
+        stats.dev as u32,
+        stats.ino as u32,
+        stats.mode,
+        stats.uid,
+        stats.gid,
+        stats.size as u32,
+        hash_str,
+        flags: path.len() as u16,
+        false,
+        false,
+        0,
+        path
+    )
+
+    let existing = .entries.find(|e|=>e.path == path)
+    if existing >= 0 { 
+        .entries.data[existing].free()
+        .entries.data[existing] = new_entry
+    } else {
+        .entries.push(new_entry)
+        .num_entries += 1
+        sort_by<&Entry>(.entries.data, .entries.size, |a,b|=>a.path.compare(b.path))
+    }
+}
+
+def Index::dump(this) {
+    println(f"signature: {.signature}")
+    println(f"version: {.version}")
+    println(f"num_entries: {.num_entries}")
+
+    for entry in .entries.iter() {
+        println(f"\n\tpath: {entry.path}")
+        println(f"\tctime_seconds: {entry.ctime_seconds}")
+        println(f"\tctime_nanoseconds: {entry.ctime_nanoseconds}")
+        println(f"\tmtime_seconds: {entry.mtime_seconds}")
+        println(f"\tmtime_nanoseconds: {entry.mtime_nanoseconds}")
+        println(f"\tdev: {entry.dev}")
+        println(f"\tino: {entry.ino}")
+        println(f"\tmode: {entry.mode}")
+        println(f"\tuid: {entry.uid}")
+        println(f"\tgid: {entry.gid}")
+        println(f"\tsize: {entry.size}")
+        println(f"\tsha1: {entry.sha1}")
+        println(f"\tflags: {entry.flags}")
+    }
+}
+
 enum Object {
     Blob(buf:Buffer)
     Tree(li:$[TreeElement])

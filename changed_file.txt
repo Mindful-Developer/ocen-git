@@ -1,0 +1,73 @@
+signature: DIRC
+version: 2
+num_entries: 5
+
+        path: dir1/file1
+        ctime_seconds: 1754541780
+        ctime_nanoseconds: 293754776
+        mtime_seconds: 1754541780
+        mtime_nanoseconds: 293754776
+        dev: 2080
+        ino: 142910
+        mode: 33188
+        uid: 1000
+        gid: 1000
+        size: 0
+        sha1: e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+        flags: 10
+
+        path: dir1/file2
+        ctime_seconds: 1754541785
+        ctime_nanoseconds: 122125703
+        mtime_seconds: 1754541785
+        mtime_nanoseconds: 122125703
+        dev: 2080
+        ino: 142911
+        mode: 33188
+        uid: 1000
+        gid: 1000
+        size: 0
+        sha1: e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+        flags: 10
+
+        path: dir2/file3
+        ctime_seconds: 1754857052
+        ctime_nanoseconds: 606429624
+        mtime_seconds: 1754857052
+        mtime_nanoseconds: 606429624
+        dev: 2080
+        ino: 142912
+        mode: 33188
+        uid: 1000
+        gid: 1000
+        size: 21
+        sha1: d18b2763b4ba9fe6fc96a6b2a36cc7d29286d444
+        flags: 10
+
+        path: dir2/file4
+        ctime_seconds: 1754857270
+        ctime_nanoseconds: 264902756
+        mtime_seconds: 1754857270
+        mtime_nanoseconds: 264902756
+        dev: 2080
+        ino: 153486
+        mode: 33188
+        uid: 1000
+        gid: 1000
+        size: 0
+        sha1: da39a3ee5e6b4b0d3255bfef95601890afd80709
+        flags: 10
+
+        path: hello.txt
+        ctime_seconds: 1754522662
+        ctime_nanoseconds: 659581240
+        mtime_seconds: 1754522662
+        mtime_nanoseconds: 659581240
+        dev: 2080
+        ino: 140255
+        mode: 33188
+        uid: 1000
+        gid: 1000
+        size: 12
+        sha1: 3b18e512dba79e4c8300dd08aeb37f8e728b8dad
+        flags: 9
