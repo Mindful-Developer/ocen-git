@@ -13,7 +13,11 @@ struct TreeElement {
     hash: str
 }
 
-
+def TreeElement::free(this) {
+    .filename.free()
+    .mode.free()
+    .hash.free()
+}
 
 struct Commit {
     tree_hash: str
@@ -41,10 +45,144 @@ def Commit::free(&this) {
     std::mem::free(this)
 }
 
-def TreeElement::free(this) {
-    .filename.free()
-    .mode.free()
-    .hash.free()
+struct Entry {
+    ctime_seconds: u32,
+    ctime_nanoseconds: u32,
+    mtime_seconds: u32,
+    mtime_nanoseconds: u32,
+    dev: u32,
+    ino: u32,
+    mode: u32,
+    uid: u32,
+    gid: u32,
+    size: u32,
+    sha1: str,
+    flags: u16,
+    assume_valid: bool,
+    extended: bool,
+    stage: u16,
+    path: str,
+}
+
+def Entry::free(&this) {
+    .sha1.free()
+    .path.free()
+    std::mem::free(this)
+}
+
+struct Index {
+    signature: str,
+    version: u32,
+    num_entries: u32,
+    entries: $[&Entry],
+}
+
+def Index::free(&this) {
+    .signature.free()
+    for entry in .entries.iter() {
+        entry.free()
+    }
+    .entries.free()
+    std::mem::free(this)
+}
+
+def Index::from_buf(file: Buffer): &Index {
+    let reader = file.reader()
+    
+    let signature = reader.read_bytes_sv(4)
+    let version = reader.read_u32()
+    let num_entries = reader.read_u32()
+    let entries: $[&Entry] = $[]
+
+    for let i = 0; i < num_entries as u32; i += 1 {
+        let ctime_seconds = reader.read_u32()
+        let ctime_nanoseconds = reader.read_u32()
+        let mtime_seconds = reader.read_u32()
+        let mtime_nanoseconds = reader.read_u32()
+        let dev = reader.read_u32()
+        let ino = reader.read_u32()
+        let mode = reader.read_u32()
+        let uid = reader.read_u32()
+        let gid = reader.read_u32()
+        let size = reader.read_u32()
+        let sha1_sv = reader.read_bytes_sv(20)
+        let sha1: SHA1Hash
+        std::libc::memcpy(sha1.data, sha1_sv.data, 20)
+        let hash_str = sha1.stringify()
+        let flags = reader.read_u16()
+        let assume_valid = ((flags >> 15) & 0b1) != 0
+        let extended = ((flags >> 14) & 0b1) != 0
+        let stage = (flags >> 12) & 0b11
+        let name_length = flags & 0xFFF
+        let path = reader.read_bytes_sv(name_length as u32).copy_data_to_cstr()
+        let total_entry_size = 62 + name_length as u32
+        let padding = (8 - total_entry_size % 8)
+        reader.read_bytes_sv(padding)
+
+        let entry = @new Entry (
+            ctime_seconds,
+            ctime_nanoseconds,
+            mtime_seconds,
+            mtime_nanoseconds,
+            dev,
+            ino,
+            mode,
+            uid,
+            gid,
+            size,
+            hash_str,
+            flags,
+            assume_valid,
+            extended,
+            stage,
+            path
+        )
+        entries.push(entry)
+    }
+    
+
+    return @new Index(
+        signature.copy_data_to_cstr(),
+        version,
+        num_entries,
+        entries
+    )
+}
+
+def Index::to_buf(&this): Buffer {
+    let buf = Buffer::make()
+    buf.write_bytes(.signature, 4)
+    buf.write_u32(.version)
+    buf.write_u32(.num_entries)
+
+    for entry in .entries.iter() {
+        buf.write_u32(entry.ctime_seconds)
+        buf.write_u32(entry.ctime_nanoseconds)
+        buf.write_u32(entry.mtime_seconds)
+        buf.write_u32(entry.mtime_nanoseconds)
+        buf.write_u32(entry.dev)
+        buf.write_u32(entry.ino)
+        buf.write_u32(entry.mode)
+        buf.write_u32(entry.uid)
+        buf.write_u32(entry.gid)
+        buf.write_u32(entry.size)
+        let sha1 = SHA1Hash::parse_string_hash(entry.sha1)
+        buf.write_bytes(sha1.data, 20)
+        buf.write_u16(entry.flags)
+        buf.write_bytes(entry.path, entry.path.len())
+
+        // 1-8 nul bytes as necessary to pad the entry to a multiple 
+        // of eight bytes while keeping the name NUL-terminated.
+        let total_entry_size = 62 + entry.path.len()
+        let padding = (8 - total_entry_size % 8)
+        for let i = 0; i < padding; i += 1 {
+            buf.write_u8(0)
+        }
+    }
+    let sha1 = SHA1Hash::from(buf)
+    buf.write_bytes(sha1.data, 20)
+
+    return buf
 }
 
 enum Object {
